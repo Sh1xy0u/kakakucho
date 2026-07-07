@@ -27,7 +27,7 @@
     --shadow: 0 1px 0 rgba(34,31,26,0.04), 0 2px 8px rgba(34,31,26,0.06);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0;overflow-x:hidden;}
   body{
     background:var(--paper);
     color:var(--ink);
@@ -231,14 +231,14 @@
     padding:8px; margin-bottom:8px;
   }
   .item-row-main{
-    display:grid; grid-template-columns: 1fr 68px 42px 26px;
-    gap:6px; align-items:center;
+    display:grid; grid-template-columns: minmax(0,1fr) 60px 36px 22px;
+    gap:5px; align-items:center;
   }
-  .item-row-main input{ padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px; font-family:'Zen Kaku Gothic New',sans-serif;}
+  .item-row-main input{ min-width:0; width:100%; padding:9px 6px; font-size:13px; border:1px solid var(--rule); border-radius:3px; font-family:'Zen Kaku Gothic New',sans-serif;}
   .item-row-main input.price{ font-family:'DotGothic16',monospace; text-align:right;}
   .item-row-main .del{
     background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;
-    padding:4px;
+    padding:4px; min-width:0;
   }
   .item-row-toggle{
     font-size:11px; color:var(--ink-soft); padding:8px 2px 2px; cursor:pointer;
@@ -247,14 +247,15 @@
     margin-top:8px; padding-top:8px; border-top:1px dashed var(--rule);
   }
   .detail-grid{
-    display:grid; grid-template-columns: 1fr 90px; gap:6px; margin-bottom:8px;
+    display:grid; grid-template-columns: minmax(0,1fr) 80px; gap:6px; margin-bottom:8px;
   }
   .detail-grid input, .detail-grid select{
-    padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
+    min-width:0; width:100%; box-sizing:border-box;
+    padding:9px 6px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
     font-family:'Zen Kaku Gothic New',sans-serif; background:var(--card); color:var(--ink);
   }
   .item-detail .ibrand{
-    width:100%; padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
+    width:100%; min-width:0; box-sizing:border-box; padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
     font-family:'Zen Kaku Gothic New',sans-serif; margin-bottom:8px;
   }
   .sale-check{
