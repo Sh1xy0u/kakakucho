@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --paper:#EFEDE3;
@@ -65,6 +66,9 @@
   }
   .topbar .sub{
     font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:1px;
+  }
+  .sync-status{
+    font-size:10px; color:var(--ink-soft); margin-top:6px; letter-spacing:0.5px;
   }
   main#view{
     flex:1;
@@ -289,6 +293,7 @@
   <div class="topbar">
     <h1><span class="lamp"></span>かかく帳</h1>
     <div class="sub">お店で見た値段を、その場で記録する</div>
+    <div class="sync-status" id="syncStatus"></div>
   </div>
   <main id="view"></main>
   <nav class="tabbar" id="tabbar">
@@ -301,6 +306,12 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ---------- Supabase config (optional: fill in to enable multi-device sync) ----------
+// Leave both blank to keep using local/Claude storage only (default, no login required).
+// See the setup instructions for how to create these.
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
+
 // ---------- state ----------
 let receipts = [];              // {id, store, date, items:[{name,price,qty,amount,unit,brand,sale}]}
 let stores = [];                // store master: array of store name strings
@@ -311,12 +322,13 @@ let editingId = null;            // set when editing an existing record instead 
 let addingStoreInline = false;  // transient UI state for inline "add new store"
 let productChart = null;
 let selectedProduct = null;
+let supabaseClient = null;
+let supabaseUser = null;
+let authError = '';
+let authBusy = false;
 
 const $view = document.getElementById('view');
 const $toast = document.getElementById('toast');
-
-const SUPABASE_URL = '';
-const SUPABASE_ANON_KEY = '';
 
 function showToast(msg){
   $toast.textContent = msg;
@@ -351,12 +363,20 @@ function unitPriceLabel(it){
 }
 
 // ---------- storage adapter ----------
-// window.storage is only available inside Claude's artifact viewer.
-// When this file is hosted standalone (e.g. GitHub Pages, home screen app),
-// we fall back to the browser's own localStorage so the app still works.
+// Priority: Supabase (if configured & logged in, enables multi-device sync)
+//        -> window.storage (only available inside Claude's artifact viewer)
+//        -> localStorage (fallback for standalone hosting, single device only)
 const hasCloudStorage = (typeof window.storage !== 'undefined' && window.storage !== null);
 
 async function storageGet(key){
+  if(supabaseClient && supabaseUser){
+    try{
+      const { data, error } = await supabaseClient
+        .from('app_data').select('value').eq('key', key).maybeSingle();
+      if(error || !data) return null;
+      return { key, value: data.value };
+    }catch(e){ return null; }
+  }
   if(hasCloudStorage){
     try{ return await window.storage.get(key, false); }catch(e){ return null; }
   }
@@ -364,6 +384,14 @@ async function storageGet(key){
   return v!==null ? { key, value:v } : null;
 }
 async function storageSet(key, value){
+  if(supabaseClient && supabaseUser){
+    const { error } = await supabaseClient.from('app_data').upsert(
+      { user_id: supabaseUser.id, key, value, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,key' }
+    );
+    if(error){ console.error(error); showToast('同期エラーが発生しました'); }
+    return { key, value };
+  }
   if(hasCloudStorage){
     return await window.storage.set(key, value, false);
   }
@@ -371,6 +399,10 @@ async function storageSet(key, value){
   return { key, value };
 }
 async function storageDelete(key){
+  if(supabaseClient && supabaseUser){
+    try{ await supabaseClient.from('app_data').delete().eq('key', key); }catch(e){}
+    return { key, deleted:true };
+  }
   if(hasCloudStorage){
     try{ return await window.storage.delete(key, false); }catch(e){ return null; }
   }
@@ -429,6 +461,71 @@ async function deleteReceiptFromStorage(id){
     ids = ids.filter(x=>x!==id);
     await storageSet('receipt-ids', JSON.stringify(ids));
   }catch(e){}
+}
+
+// ---------- auth ----------
+async function initSupabaseIfConfigured(){
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+  if(typeof supabase === 'undefined') return false; // CDN failed to load (e.g. offline)
+  try{
+    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    return true;
+  }catch(e){
+    supabaseClient = null;
+    return false;
+  }
+}
+
+function updateSyncStatus(){
+  const el = document.getElementById('syncStatus');
+  if(!el) return;
+  el.onclick = null;
+  el.style.cursor = 'default';
+  if(supabaseUser){
+    el.textContent = `🔗 ${supabaseUser.email||''} で同期中（タップでログアウト）`;
+    el.style.cursor = 'pointer';
+    el.onclick = async ()=>{
+      if(!confirm('ログアウトしますか？')) return;
+      await supabaseClient.auth.signOut();
+      supabaseUser = null;
+      document.getElementById('tabbar').style.display='none';
+      authError=''; authBusy=false;
+      renderLogin();
+    };
+  } else if(SUPABASE_URL && SUPABASE_ANON_KEY){
+    el.textContent = '';
+  } else {
+    el.textContent = '🔒 この端末のみに保存';
+  }
+}
+
+async function startApp(){
+  document.getElementById('tabbar').style.display = '';
+  updateSyncStatus();
+  $view.innerHTML = `<div class="spinner-wrap"><div class="spinner"></div>読み込み中…</div>`;
+  await Promise.all([loadReceipts(), loadStores()]);
+  currentTab = 'home';
+  document.querySelectorAll('.tabbar button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab==='home');
+  });
+  render();
+}
+
+function renderLogin(){
+  document.getElementById('tabbar').style.display = 'none';
+  updateSyncStatus();
+  const errHtml = authError ? `<div style="color:var(--red);font-size:12px;margin-bottom:10px;">${escapeHtml(authError)}</div>` : '';
+  $view.innerHTML = `
+    <div class="section-label">ログインして同期する</div>
+    <div class="receipt-card">
+      <div class="field"><label>メールアドレス</label><input type="email" id="authEmail" placeholder="you@example.com"></div>
+      <div class="field"><label>パスワード</label><input type="password" id="authPassword" placeholder="6文字以上"></div>
+      ${errHtml}
+      <button class="primary" data-action="auth-login" ${authBusy?'disabled':''}>ログイン</button>
+      <button class="secondary" data-action="auth-signup" ${authBusy?'disabled':''}>はじめての方はこちら（新規登録）</button>
+    </div>
+    <div style="font-size:11px;color:var(--ink-soft);padding:0 6px;line-height:1.7;">同じアカウントで別の端末からログインすると、記録を共有できます。</div>
+  `;
 }
 
 // ---------- rendering ----------
@@ -771,6 +868,31 @@ document.getElementById('view').addEventListener('click', async (e)=>{
   const action = target.dataset.action;
 
   if(action==='goto-add'){ setTab('add'); }
+  else if(action==='auth-login' || action==='auth-signup'){
+    const emailEl = document.getElementById('authEmail');
+    const passEl = document.getElementById('authPassword');
+    const email = emailEl ? emailEl.value.trim() : '';
+    const password = passEl ? passEl.value : '';
+    if(!email || !password){ authError='メールアドレスとパスワードを入力してください'; renderLogin(); return; }
+    authBusy = true; authError=''; renderLogin();
+    try{
+      const result = action==='auth-signup'
+        ? await supabaseClient.auth.signUp({ email, password })
+        : await supabaseClient.auth.signInWithPassword({ email, password });
+      if(result.error){ authError = result.error.message; authBusy=false; renderLogin(); return; }
+      if(action==='auth-signup' && !result.data.session){
+        authError = '確認メールを送信しました。メール内のリンクを開いてから、ログインしてください。';
+        authBusy = false; renderLogin(); return;
+      }
+      supabaseUser = result.data.session ? result.data.session.user : result.data.user;
+      authBusy = false;
+      await startApp();
+    }catch(e){
+      authError = '通信エラーが発生しました。時間をおいて再度お試しください。';
+      authBusy = false;
+      renderLogin();
+    }
+  }
   else if(action==='reset-form'){ draft = { store:'', date: new Date().toISOString().slice(0,10), items:[{name:'',price:'',qty:1}] }; editingId=null; addingStoreInline=false; render(); }
   else if(action==='edit-receipt'){
     const id = target.dataset.id;
@@ -887,8 +1009,20 @@ document.getElementById('tabbar').addEventListener('click', (e)=>{
 // ---------- init ----------
 (async function init(){
   $view.innerHTML = `<div class="spinner-wrap"><div class="spinner"></div>読み込み中…</div>`;
-  await Promise.all([loadReceipts(), loadStores()]);
-  render();
+  const configured = await initSupabaseIfConfigured();
+  if(configured){
+    try{
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if(session){
+        supabaseUser = session.user;
+        await startApp();
+        return;
+      }
+    }catch(e){ /* fall through to login screen */ }
+    renderLogin();
+    return;
+  }
+  await startApp();
 })();
 </script>
 </body>
