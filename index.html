@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="かかく帳">
+<meta name="theme-color" content="#EFEDE3">
+<title>かかく帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#EFEDE3;
+    --card:#FBFAF4;
+    --ink:#221F1A;
+    --ink-soft:#7A7568;
+    --ink-faint:#B0AA98;
+    --red:#B23A2E;
+    --red-bg:#F4E2DF;
+    --green:#3F7D58;
+    --green-bg:#E1EBE2;
+    --rule:#D9D4C3;
+    --shadow: 0 1px 0 rgba(34,31,26,0.04), 0 2px 8px rgba(34,31,26,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .num{ font-family:'DotGothic16', monospace; font-variant-numeric: tabular-nums; letter-spacing:0.5px; }
+  #app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    background:var(--paper);
+    position:relative;
+  }
+  .topbar{
+    padding:18px 20px 14px;
+    position:sticky; top:0; z-index:20;
+    background:var(--paper);
+    border-bottom:1px solid var(--rule);
+  }
+  .topbar h1{
+    font-family:'DotGothic16', monospace;
+    font-size:22px;
+    letter-spacing:2px;
+    margin:0;
+    display:flex; align-items:center; gap:8px;
+  }
+  .topbar h1 .lamp{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 6px var(--green);
+    display:inline-block;
+  }
+  .topbar .sub{
+    font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:1px;
+  }
+  main#view{
+    flex:1;
+    padding:16px 16px 90px;
+    overflow-y:auto;
+  }
+  .tabbar{
+    position:sticky; bottom:0; z-index:30;
+    display:flex;
+    background:var(--card);
+    border-top:1px solid var(--rule);
+    padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+  .tabbar button{
+    flex:1;
+    background:none;border:none;
+    display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:8px 2px;
+    color:var(--ink-faint);
+    font-family:'Zen Kaku Gothic New',sans-serif;
+    font-size:10px;
+    border-radius:10px;
+    cursor:pointer;
+  }
+  .tabbar button .ic{font-size:19px;line-height:1;}
+  .tabbar button.active{color:var(--ink); background:var(--paper);}
+  .tabbar button.active .ic{filter:none;}
+
+  /* Receipt-style card with punched perforation on top */
+  .receipt-card{
+    position:relative;
+    background:var(--card);
+    box-shadow:var(--shadow);
+    border-radius:3px;
+    padding:16px 16px 14px;
+    margin-bottom:22px;
+  }
+  .receipt-card::before{
+    content:"";
+    position:absolute; top:-6px; left:6px; right:6px; height:12px;
+    background-image: radial-gradient(circle 6px, var(--paper) 6px, transparent 6.5px);
+    background-size:20px 12px;
+    background-repeat:repeat-x;
+    background-position: 2px 0;
+  }
+  .stat-row{
+    display:flex; gap:10px; margin-bottom:18px;
+  }
+  .stat-box{
+    flex:1;
+    background:var(--card);
+    border-radius:3px;
+    box-shadow:var(--shadow);
+    padding:14px 12px;
+    text-align:center;
+  }
+  .stat-box .n{ font-family:'DotGothic16',monospace; font-size:26px; }
+  .stat-box .l{ font-size:10px; color:var(--ink-soft); margin-top:4px; letter-spacing:1px;}
+
+  .section-label{
+    font-size:11px; letter-spacing:2px; color:var(--ink-soft);
+    margin:4px 0 10px; text-transform:uppercase;
+  }
+  .rcard-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:1px dashed var(--rule);
+    padding-bottom:8px; margin-bottom:8px;
+  }
+  .rcard-store{ font-weight:700; font-size:15px; }
+  .rcard-date{ font-size:11px; color:var(--ink-soft); font-family:'DotGothic16',monospace;}
+  .rcard-items{ font-size:12px; color:var(--ink-soft); line-height:1.7; }
+  .rcard-item-row{ display:flex; justify-content:space-between; }
+  .rcard-total{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-top:8px; padding-top:8px; border-top:1px dashed var(--rule);
+  }
+  .rcard-total .lbl{ font-size:12px; color:var(--ink-soft);}
+  .rcard-total .amt{ font-family:'DotGothic16',monospace; font-size:20px; }
+
+  .empty{
+    text-align:center; padding:60px 20px; color:var(--ink-soft);
+  }
+  .empty .ic{font-size:40px; display:block; margin-bottom:12px;}
+  .empty .msg{font-size:13px; line-height:1.7; margin-bottom:18px;}
+
+  button.primary{
+    display:block; width:100%;
+    background:var(--ink); color:var(--card);
+    border:none; border-radius:3px;
+    padding:14px; font-size:14px; font-weight:700;
+    font-family:'Zen Kaku Gothic New',sans-serif;
+    letter-spacing:1px;
+    cursor:pointer;
+  }
+  button.secondary{
+    display:block; width:100%;
+    background:none; color:var(--ink);
+    border:1px solid var(--ink-faint); border-radius:3px;
+    padding:12px; font-size:13px; font-weight:500;
+    cursor:pointer; margin-top:8px;
+  }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:11px; color:var(--ink-soft); margin-bottom:5px; letter-spacing:1px;}
+  .field input, .field select{
+    width:100%; padding:11px 12px; font-size:14px;
+    border:1px solid var(--rule); border-radius:3px;
+    background:var(--card); color:var(--ink);
+    font-family:'Zen Kaku Gothic New',sans-serif;
+  }
+  .field input:focus, .field select:focus{ outline:2px solid var(--ink); outline-offset:1px; }
+
+  .add-row-btn{
+    width:100%; padding:10px; border:1px dashed var(--ink-faint); background:none;
+    border-radius:3px; color:var(--ink-soft); font-size:13px; cursor:pointer; margin-bottom:16px;
+  }
+
+  .spinner-wrap{ text-align:center; padding:24px 0; color:var(--ink-soft); font-size:13px;}
+  .spinner{
+    width:28px;height:28px;border-radius:50%;
+    border:3px solid var(--rule); border-top-color:var(--ink);
+    margin:0 auto 12px; animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  .badge{
+    display:inline-block; padding:2px 7px; border-radius:20px;
+    font-size:10px; font-family:'DotGothic16',monospace; letter-spacing:0.5px;
+  }
+  .badge.up{ background:var(--red-bg); color:var(--red); }
+  .badge.down{ background:var(--green-bg); color:var(--green); }
+  .badge.min{ background:var(--green-bg); color:var(--green); }
+
+  .toast{
+    position:fixed; left:50%; bottom:90px; transform:translateX(-50%);
+    background:var(--ink); color:var(--card); padding:10px 18px;
+    border-radius:20px; font-size:12px; z-index:99; box-shadow:var(--shadow);
+    opacity:0; transition:opacity 0.25s;
+    pointer-events:none;
+  }
+  .toast.show{ opacity:1; }
+
+  .store-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 4px; border-bottom:1px solid var(--rule); cursor:pointer;
+  }
+  .store-row:last-child{ border-bottom:none; }
+  .store-row .name{ font-weight:700; font-size:14px; }
+  .store-row .meta{ font-size:11px; color:var(--ink-soft); margin-top:2px;}
+  .store-row .chev{ color:var(--ink-faint); }
+
+  .compare-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px dashed var(--rule); font-size:13px;
+  }
+  .compare-row:last-child{border-bottom:none;}
+  .compare-row .price{ font-family:'DotGothic16',monospace; font-size:16px;}
+
+  .item-block{
+    border:1px solid var(--rule); border-radius:4px;
+    padding:8px; margin-bottom:8px;
+  }
+  .item-row-main{
+    display:grid; grid-template-columns: 1fr 68px 42px 26px;
+    gap:6px; align-items:center;
+  }
+  .item-row-main input{ padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px; font-family:'Zen Kaku Gothic New',sans-serif;}
+  .item-row-main input.price{ font-family:'DotGothic16',monospace; text-align:right;}
+  .item-row-main .del{
+    background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;
+    padding:4px;
+  }
+  .item-row-toggle{
+    font-size:11px; color:var(--ink-soft); padding:8px 2px 2px; cursor:pointer;
+  }
+  .item-detail{
+    margin-top:8px; padding-top:8px; border-top:1px dashed var(--rule);
+  }
+  .detail-grid{
+    display:grid; grid-template-columns: 1fr 90px; gap:6px; margin-bottom:8px;
+  }
+  .detail-grid input, .detail-grid select{
+    padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
+    font-family:'Zen Kaku Gothic New',sans-serif; background:var(--card); color:var(--ink);
+  }
+  .item-detail .ibrand{
+    width:100%; padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
+    font-family:'Zen Kaku Gothic New',sans-serif; margin-bottom:8px;
+  }
+  .sale-check{
+    display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); cursor:pointer;
+  }
+  .sale-check input{ width:auto; }
+
+  .chart-wrap{ height:220px; position:relative; }
+
+  .store-master-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 2px; border-bottom:1px solid var(--rule);
+  }
+  .store-master-row:last-child{ border-bottom:none; }
+  .store-master-row .name{ font-size:13px; font-weight:500; }
+
+  .add-store-row{ display:flex; gap:6px; margin-bottom:10px; }
+  .add-store-row input{
+    flex:1; padding:10px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
+    font-family:'Zen Kaku Gothic New',sans-serif;
+  }
+  .add-store-row button{
+    flex-shrink:0; padding:0 14px; border:none; border-radius:3px;
+    background:var(--ink); color:var(--card); font-size:13px; cursor:pointer;
+  }
+
+  datalist{ display:none; }
+
+  .back-link{
+    font-size:12px; color:var(--ink-soft); margin-bottom:12px; cursor:pointer; display:inline-block;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <h1><span class="lamp"></span>かかく帳</h1>
+    <div class="sub">お店で見た値段を、その場で記録する</div>
+  </div>
+  <main id="view"></main>
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="home"><span class="ic">🏠</span><span>ホーム</span></button>
+    <button data-tab="add"><span class="ic">✏️</span><span>追加</span></button>
+    <button data-tab="products"><span class="ic">📈</span><span>商品</span></button>
+    <button data-tab="stores"><span class="ic">🏬</span><span>店舗</span></button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- state ----------
+let receipts = [];              // {id, store, date, items:[{name,price,qty,amount,unit,brand,sale}]}
+let stores = [];                // store master: array of store name strings
+let currentTab = 'home';
+let storeFilter = null;         // when set, home view filters by store
+let draft = null;                // in-progress entry during add flow
+let editingId = null;            // set when editing an existing record instead of creating new
+let addingStoreInline = false;  // transient UI state for inline "add new store"
+let productChart = null;
+let selectedProduct = null;
+
+const $view = document.getElementById('view');
+const $toast = document.getElementById('toast');
+
+function showToast(msg){
+  $toast.textContent = msg;
+  $toast.classList.add('show');
+  setTimeout(()=>$toast.classList.remove('show'), 1800);
+}
+
+function uid(){ return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
+
+function fmtDate(d){
+  if(!d) return '----/--/--';
+  const parts = d.split('-');
+  if(parts.length!==3) return d;
+  return parts[0]+'年'+parseInt(parts[1])+'月'+parseInt(parts[2])+'日';
+}
+function fmtYen(n){
+  n = Math.round(n||0);
+  return '¥' + n.toLocaleString('ja-JP');
+}
+function receiptTotal(r){
+  return (r.items||[]).reduce((s,it)=> s + (Number(it.price)||0) * (Number(it.qty)||1), 0);
+}
+function unitPricePer100(it){
+  const amount = Number(it.amount);
+  if(!amount || amount<=0 || !it.unit) return null;
+  return (Number(it.price)/amount)*100;
+}
+function unitPriceLabel(it){
+  const v = unitPricePer100(it);
+  if(v===null) return null;
+  return `100${it.unit}あたり¥${v.toLocaleString('ja-JP',{maximumFractionDigits:1})}`;
+}
+
+// ---------- storage adapter ----------
+// window.storage is only available inside Claude's artifact viewer.
+// When this file is hosted standalone (e.g. GitHub Pages, home screen app),
+// we fall back to the browser's own localStorage so the app still works.
+const hasCloudStorage = (typeof window.storage !== 'undefined' && window.storage !== null);
+
+async function storageGet(key){
+  if(hasCloudStorage){
+    try{ return await window.storage.get(key, false); }catch(e){ return null; }
+  }
+  const v = localStorage.getItem('kakakucho:'+key);
+  return v!==null ? { key, value:v } : null;
+}
+async function storageSet(key, value){
+  if(hasCloudStorage){
+    return await window.storage.set(key, value, false);
+  }
+  localStorage.setItem('kakakucho:'+key, value);
+  return { key, value };
+}
+async function storageDelete(key){
+  if(hasCloudStorage){
+    try{ return await window.storage.delete(key, false); }catch(e){ return null; }
+  }
+  localStorage.removeItem('kakakucho:'+key);
+  return { key, deleted:true };
+}
+
+// ---------- storage: stores ----------
+async function loadStores(){
+  try{
+    const res = await storageGet('store-master');
+    stores = res ? JSON.parse(res.value) : [];
+  }catch(e){
+    stores = [];
+  }
+}
+async function saveStores(){
+  await storageSet('store-master', JSON.stringify(stores));
+}
+
+// ---------- storage: receipts ----------
+async function loadReceipts(){
+  try{
+    const idxRes = await storageGet('receipt-ids');
+    const ids = idxRes ? JSON.parse(idxRes.value) : [];
+    const loaded = [];
+    for(const id of ids){
+      try{
+        const r = await storageGet('receipt:'+id);
+        if(r) loaded.push(JSON.parse(r.value));
+      }catch(e){ /* missing key, skip */ }
+    }
+    loaded.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt||0)-(a.createdAt||0));
+    receipts = loaded;
+  }catch(e){
+    receipts = [];
+  }
+}
+
+async function saveReceiptToStorage(r){
+  await storageSet('receipt:'+r.id, JSON.stringify(r));
+  let ids = [];
+  try{
+    const idxRes = await storageGet('receipt-ids');
+    ids = idxRes ? JSON.parse(idxRes.value) : [];
+  }catch(e){ ids = []; }
+  if(!ids.includes(r.id)) ids.push(r.id);
+  await storageSet('receipt-ids', JSON.stringify(ids));
+}
+
+async function deleteReceiptFromStorage(id){
+  await storageDelete('receipt:'+id);
+  try{
+    const idxRes = await storageGet('receipt-ids');
+    let ids = idxRes ? JSON.parse(idxRes.value) : [];
+    ids = ids.filter(x=>x!==id);
+    await storageSet('receipt-ids', JSON.stringify(ids));
+  }catch(e){}
+}
+
+// ---------- rendering ----------
+function setTab(tab){
+  currentTab = tab;
+  storeFilter = null;
+  if(tab !== 'add'){ draft=null; editingId=null; addingStoreInline=false; }
+  document.querySelectorAll('.tabbar button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tab===tab);
+  });
+  render();
+}
+
+function render(){
+  if(currentTab==='home') renderHome();
+  else if(currentTab==='add') renderAdd();
+  else if(currentTab==='products') renderProducts();
+  else if(currentTab==='stores') renderStores();
+}
+
+function renderHome(){
+  const list = storeFilter ? receipts.filter(r=>r.store===storeFilter) : receipts;
+  const now = new Date();
+  const thisMonth = now.toISOString().slice(0,7);
+  const monthCount = receipts.filter(r=>(r.date||'').startsWith(thisMonth)).length;
+  const productSet = new Set();
+  receipts.forEach(r=>(r.items||[]).forEach(it=>productSet.add((it.name||'').trim())));
+
+  let html = '';
+  if(storeFilter){
+    html += `<span class="back-link" data-action="clear-store-filter">← 店舗一覧に戻る</span>`;
+    html += `<div class="section-label">${escapeHtml(storeFilter)} の記録</div>`;
+  } else {
+    html += `<div class="stat-row">
+      <div class="stat-box"><div class="n">${monthCount}</div><div class="l">今月の記録</div></div>
+      <div class="stat-box"><div class="n">${productSet.size}</div><div class="l">登録商品数</div></div>
+      <div class="stat-box"><div class="n">${receipts.length}</div><div class="l">記録総数</div></div>
+    </div>`;
+    html += `<div class="section-label">最近の記録</div>`;
+  }
+
+  if(list.length===0){
+    html += `<div class="empty">
+      <span class="ic">🏷️</span>
+      <div class="msg">まだ記録がありません。<br>買っても買わなくても、見た値段を記録してみましょう。</div>
+      <button class="primary" data-action="goto-add" style="max-width:220px;margin:0 auto;">記録を追加する</button>
+    </div>`;
+  } else {
+    list.slice(0,30).forEach(r=>{
+      const total = receiptTotal(r);
+      const itemsHtml = (r.items||[]).slice(0,4).map(it=>{
+        const up = unitPriceLabel(it);
+        const brandTag = it.brand ? ` <span style="color:var(--ink-faint);">/ ${escapeHtml(it.brand)}</span>` : '';
+        const saleTag = it.sale ? ` <span class="badge down">セール</span>` : '';
+        const upTag = up ? `<div style="font-size:10px;color:var(--ink-faint);text-align:right;">${up}</div>` : '';
+        return `<div class="rcard-item-row"><span>${escapeHtml(it.name)}${brandTag}${saleTag}</span><span class="num">${fmtYen(it.price*(it.qty||1))}</span></div>${upTag}`;
+      }).join('');
+      const more = (r.items||[]).length>4 ? `<div style="text-align:right;color:var(--ink-faint);">他 ${(r.items||[]).length-4} 点</div>` : '';
+      html += `<div class="receipt-card" data-id="${r.id}">
+        <div class="rcard-head">
+          <span class="rcard-store">${escapeHtml(r.store||'店舗未設定')}</span>
+          <span class="rcard-date">${fmtDate(r.date)}</span>
+        </div>
+        <div class="rcard-items">${itemsHtml}${more}</div>
+        <div class="rcard-total">
+          <span class="lbl">合計 (${(r.items||[]).length}点)</span>
+          <span class="amt num">${fmtYen(total)}</span>
+        </div>
+        <div style="text-align:right;margin-top:6px;">
+          <span class="back-link" data-action="edit-receipt" data-id="${r.id}" style="margin-right:12px;">修正</span>
+          <span class="back-link" data-action="delete-receipt" data-id="${r.id}" style="color:var(--red);">削除</span>
+        </div>
+      </div>`;
+    });
+  }
+  $view.innerHTML = html;
+}
+
+function renderAdd(){
+  if(!draft){
+    draft = { store:'', date: new Date().toISOString().slice(0,10), items:[{name:'',price:'',qty:1}] };
+  }
+  let html = `<div class="section-label">${editingId ? '記録を修正する' : '値段を記録する'}</div>`;
+  html += renderReviewForm();
+  $view.innerHTML = html;
+  bindReviewFormEvents();
+}
+
+function renderReviewForm(){
+  let rows = draft.items.map((it,i)=>{
+    const up = unitPriceLabel(it);
+    const summary = [];
+    if(it.brand) summary.push(escapeHtml(it.brand));
+    if(up) summary.push(up);
+    if(it.sale) summary.push('セール');
+    const summaryText = summary.length ? ` — ${summary.join(' / ')}` : '';
+    return `
+    <div class="item-block" data-idx="${i}">
+      <div class="item-row-main">
+        <input type="text" placeholder="商品名" class="iname" value="${escapeAttr(it.name)}">
+        <input type="text" inputmode="decimal" placeholder="価格" class="iprice num" value="${it.price ?? ''}">
+        <input type="text" inputmode="numeric" placeholder="数" class="iqty num" value="${it.qty ?? 1}">
+        <button class="del" data-action="del-item" data-idx="${i}">✕</button>
+      </div>
+      <div class="item-row-toggle" data-action="toggle-item-detail" data-idx="${i}">${it._open?'▾':'▸'} 詳細（任意）${summaryText}</div>
+      ${it._open ? `
+      <div class="item-detail">
+        <div class="detail-grid">
+          <input type="text" inputmode="decimal" placeholder="内容量（例: 500）" class="iamount" value="${it.amount ?? ''}">
+          <select class="iunit">
+            <option value="">単位</option>
+            <option value="g" ${it.unit==='g'?'selected':''}>g</option>
+            <option value="ml" ${it.unit==='ml'?'selected':''}>ml</option>
+          </select>
+        </div>
+        <input type="text" placeholder="メーカー・ブランド（任意）" class="ibrand" value="${escapeAttr(it.brand||'')}">
+        <label class="sale-check"><input type="checkbox" class="isale" ${it.sale?'checked':''}> セール価格として記録する</label>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  const storeField = (() => {
+    if(addingStoreInline || stores.length===0){
+      return `<div class="add-store-row">
+        <input type="text" id="newStoreInlineInput" placeholder="店舗名を入力(例：〇〇スーパー △△店)" value="${escapeAttr(draft.store)}">
+        <button data-action="confirm-add-store-inline">登録</button>
+      </div>
+      ${stores.length>0 ? `<span class="back-link" data-action="cancel-add-store-inline">既存の店舗から選ぶ</span>` : ''}`;
+    }
+    const opts = stores.map(s=>`<option value="${escapeAttr(s)}" ${s===draft.store?'selected':''}>${escapeHtml(s)}</option>`).join('');
+    return `<select id="storeInput">
+        <option value="">選択してください</option>
+        ${opts}
+      </select>
+      <span class="back-link" data-action="toggle-add-store-inline">＋ 新しい店舗を登録する</span>`;
+  })();
+
+  return `
+    <div class="field">
+      <label>店舗</label>
+      ${storeField}
+    </div>
+    <div class="field">
+      <label>日付</label>
+      <input type="date" id="dateInput" value="${draft.date}">
+    </div>
+    <div class="section-label">商品（${draft.items.length}点）</div>
+    <div id="itemsContainer">${rows}</div>
+    <button class="add-row-btn" data-action="add-item">＋ 商品を追加</button>
+    <button class="primary" data-action="save-receipt">${editingId ? '変更を保存する' : 'この内容を記録する'}</button>
+    <button class="secondary" data-action="reset-form">${editingId ? '編集をやめる' : '入力をクリア'}</button>
+  `;
+}
+
+function bindReviewFormEvents(){
+  const storeInput = document.getElementById('storeInput');
+  const dateInput = document.getElementById('dateInput');
+  const newStoreInlineInput = document.getElementById('newStoreInlineInput');
+  if(storeInput) storeInput.addEventListener('change', e=> draft.store = e.target.value);
+  if(dateInput) dateInput.addEventListener('input', e=> draft.date = e.target.value);
+  if(newStoreInlineInput) newStoreInlineInput.addEventListener('input', e=> draft.store = e.target.value);
+
+  document.querySelectorAll('#itemsContainer .item-block').forEach(block=>{
+    const idx = Number(block.dataset.idx);
+    block.querySelector('.iname').addEventListener('input', e=> draft.items[idx].name = e.target.value);
+    block.querySelector('.iprice').addEventListener('input', e=> draft.items[idx].price = e.target.value);
+    block.querySelector('.iqty').addEventListener('input', e=> draft.items[idx].qty = e.target.value);
+    const amountEl = block.querySelector('.iamount');
+    const unitEl = block.querySelector('.iunit');
+    const brandEl = block.querySelector('.ibrand');
+    const saleEl = block.querySelector('.isale');
+    if(amountEl) amountEl.addEventListener('input', e=> draft.items[idx].amount = e.target.value);
+    if(unitEl) unitEl.addEventListener('change', e=> draft.items[idx].unit = e.target.value);
+    if(brandEl) brandEl.addEventListener('input', e=> draft.items[idx].brand = e.target.value);
+    if(saleEl) saleEl.addEventListener('change', e=> draft.items[idx].sale = e.target.checked);
+  });
+}
+
+function renderProducts(){
+  const productMap = {}; // name -> [{date, store, price, sale, amount, unit, brand}]
+  receipts.forEach(r=>{
+    (r.items||[]).forEach(it=>{
+      const name = (it.name||'').trim();
+      if(!name) return;
+      if(!productMap[name]) productMap[name] = [];
+      productMap[name].push({
+        date: r.date, store: r.store||'不明', price: Number(it.price)||0,
+        sale: !!it.sale, amount: it.amount||null, unit: it.unit||'', brand: it.brand||''
+      });
+    });
+  });
+  const names = Object.keys(productMap).sort((a,b)=>a.localeCompare(b,'ja'));
+
+  let html = `<div class="section-label">商品を選んで価格の推移を見る</div>`;
+  if(names.length===0){
+    html += `<div class="empty"><span class="ic">📈</span><div class="msg">記録を追加すると、<br>ここに商品ごとの価格グラフが表示されます。</div></div>`;
+    $view.innerHTML = html;
+    return;
+  }
+  if(!selectedProduct || !productMap[selectedProduct]) selectedProduct = names[0];
+
+  html += `<div class="field">
+    <select id="productSelect">
+      ${names.map(n=>`<option value="${escapeAttr(n)}" ${n===selectedProduct?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+    </select>
+  </div>`;
+  html += `<div class="receipt-card"><div class="chart-wrap"><canvas id="priceChart"></canvas></div></div>`;
+
+  const history = productMap[selectedProduct].slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const latestByStore = {};
+  history.forEach(h=>{ latestByStore[h.store] = h; }); // last write wins since sorted asc
+  const compareList = Object.values(latestByStore)
+    .map(h=> ({ ...h, _cmp: unitPricePer100(h) ?? h.price }))
+    .sort((a,b)=>a._cmp-b._cmp);
+  const minCmp = compareList.length ? compareList[0]._cmp : null;
+  const usesUnitPrice = compareList.some(h=> unitPricePer100(h)!==null);
+
+  html += `<div class="section-label">店舗ごとの最新価格${usesUnitPrice ? '（内容量入力ありは単価で比較）' : ''}</div>`;
+  html += `<div class="receipt-card">`;
+  compareList.forEach(h=>{
+    const isMin = h._cmp===minCmp;
+    const up = unitPriceLabel(h);
+    html += `<div class="compare-row" style="align-items:flex-start;">
+      <span>${escapeHtml(h.store)}
+        ${isMin?'<span class="badge min">最安</span>':''}
+        ${h.sale?'<span class="badge down">セール</span>':''}
+        ${h.brand?`<div style="font-size:10px;color:var(--ink-faint);">${escapeHtml(h.brand)}</div>`:''}
+        ${up?`<div style="font-size:10px;color:var(--ink-faint);">${up}</div>`:''}
+      </span>
+      <span class="price">${fmtYen(h.price)}</span>
+    </div>`;
+  });
+  html += `</div>`;
+
+  $view.innerHTML = html;
+
+  document.getElementById('productSelect').addEventListener('change', e=>{
+    selectedProduct = e.target.value;
+    renderProducts();
+  });
+
+  drawChart(history);
+}
+
+function drawChart(history){
+  const ctx = document.getElementById('priceChart');
+  if(!ctx) return;
+  if(productChart){ productChart.destroy(); }
+  const labels = history.map(h=>fmtDate(h.date));
+  const data = history.map(h=>h.price);
+  const pointColors = history.map(h=> h.sale ? '#3F7D58' : '#221F1A');
+  productChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        data,
+        borderColor:'#B23A2E',
+        backgroundColor:'rgba(178,58,46,0.08)',
+        pointBackgroundColor:pointColors,
+        pointRadius:4,
+        tension:0.15,
+        fill:true,
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label: (c)=> {
+          const h = history[c.dataIndex];
+          return '¥'+c.parsed.y.toLocaleString('ja-JP') + (h && h.sale ? '（セール）' : '');
+        } } } },
+      scales:{
+        y:{ ticks:{ callback:(v)=>'¥'+v.toLocaleString('ja-JP'), font:{family:'DotGothic16'} }, grid:{color:'#D9D4C3'} },
+        x:{ ticks:{ font:{size:10} }, grid:{display:false} }
+      }
+    }
+  });
+}
+
+function renderStores(){
+  const map = {};
+  receipts.forEach(r=>{
+    const s = r.store || '店舗未設定';
+    if(!map[s]) map[s] = { count:0, lastDate:'', total:0 };
+    map[s].count++;
+    map[s].total += receiptTotal(r);
+    if(r.date > map[s].lastDate) map[s].lastDate = r.date;
+  });
+  const visitedNames = Object.keys(map).sort((a,b)=> map[b].lastDate.localeCompare(map[a].lastDate));
+
+  let html = `<div class="section-label">店舗マスタ</div>`;
+  html += `<div class="receipt-card">
+    <div class="add-store-row">
+      <input type="text" id="newStoreName" placeholder="店舗名を入力(例：〇〇スーパー △△店)">
+      <button data-action="add-store-master">登録</button>
+    </div>`;
+  if(stores.length===0){
+    html += `<div style="font-size:12px;color:var(--ink-soft);padding:6px 0;">まだ店舗が登録されていません。ここで登録すると、記録の追加時にプルダウンから選べます。</div>`;
+  } else {
+    stores.forEach(s=>{
+      html += `<div class="store-master-row">
+        <span class="name">${escapeHtml(s)}</span>
+        <span class="back-link" data-action="delete-store-master" data-store="${escapeAttr(s)}" style="color:var(--red);margin-bottom:0;">削除</span>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="section-label">来店実績</div>`;
+  if(visitedNames.length===0){
+    html += `<div class="empty"><span class="ic">🏬</span><div class="msg">記録を追加すると、<br>ここに店舗ごとの来店実績が表示されます。</div></div>`;
+  } else {
+    html += `<div class="receipt-card">`;
+    visitedNames.forEach(n=>{
+      html += `<div class="store-row" data-action="filter-store" data-store="${escapeAttr(n)}">
+        <div>
+          <div class="name">${escapeHtml(n)}</div>
+          <div class="meta">${map[n].count}回 ・ 最終 ${fmtDate(map[n].lastDate)} ・ 累計 ${fmtYen(map[n].total)}</div>
+        </div>
+        <span class="chev">›</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  $view.innerHTML = html;
+}
+
+// ---------- helpers ----------
+function escapeHtml(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
+
+// ---------- event delegation ----------
+document.getElementById('view').addEventListener('click', async (e)=>{
+  const target = e.target.closest('[data-action]');
+  if(!target) return;
+  const action = target.dataset.action;
+
+  if(action==='goto-add'){ setTab('add'); }
+  else if(action==='reset-form'){ draft = { store:'', date: new Date().toISOString().slice(0,10), items:[{name:'',price:'',qty:1}] }; editingId=null; addingStoreInline=false; render(); }
+  else if(action==='edit-receipt'){
+    const id = target.dataset.id;
+    const r = receipts.find(x=>x.id===id);
+    if(!r) return;
+    draft = {
+      store: r.store || '',
+      date: r.date || new Date().toISOString().slice(0,10),
+      items: (r.items||[]).map(it=>({
+        name: it.name || '', price: it.price ?? '', qty: it.qty ?? 1,
+        amount: it.amount ?? '', unit: it.unit || '', brand: it.brand || '', sale: !!it.sale, _open:false
+      }))
+    };
+    if(draft.items.length===0) draft.items.push({name:'',price:'',qty:1});
+    editingId = id;
+    setTab('add');
+  }
+  else if(action==='add-item'){ draft.items.push({name:'',price:'',qty:1}); render(); }
+  else if(action==='toggle-item-detail'){
+    const idx = Number(target.dataset.idx);
+    draft.items[idx]._open = !draft.items[idx]._open;
+    render();
+  }
+  else if(action==='toggle-add-store-inline'){ addingStoreInline = true; render(); }
+  else if(action==='cancel-add-store-inline'){ addingStoreInline = false; render(); }
+  else if(action==='confirm-add-store-inline'){
+    const val = document.getElementById('newStoreInlineInput').value.trim();
+    if(!val){ showToast('店舗名を入力してください'); return; }
+    if(!stores.includes(val)){ stores.push(val); await saveStores(); }
+    draft.store = val;
+    addingStoreInline = false;
+    render();
+  }
+  else if(action==='del-item'){
+    const idx = Number(target.dataset.idx);
+    draft.items.splice(idx,1);
+    render();
+  }
+  else if(action==='save-receipt'){
+    if(!draft.store || !draft.store.trim()){ showToast('店舗名を入力してください'); return; }
+    if(!draft.date){ showToast('日付を入力してください'); return; }
+    const cleanItems = draft.items
+      .map(it=>({
+        name:(it.name||'').trim(),
+        price: parseFloat(it.price)||0,
+        qty: parseFloat(it.qty)||1,
+        amount: (it.amount!==undefined && it.amount!=='') ? (parseFloat(it.amount)||null) : null,
+        unit: it.unit || '',
+        brand: (it.brand||'').trim(),
+        sale: !!it.sale
+      }))
+      .filter(it=>it.name && it.price>0);
+    if(cleanItems.length===0){ showToast('商品を1件以上入力してください'); return; }
+    if(editingId){
+      const original = receipts.find(x=>x.id===editingId);
+      const r = { id: editingId, store: draft.store.trim(), date: draft.date, items: cleanItems, createdAt: original ? original.createdAt : Date.now() };
+      await saveReceiptToStorage(r);
+      receipts = receipts.map(x=> x.id===editingId ? r : x);
+      receipts.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt||0)-(a.createdAt||0));
+      editingId = null;
+      draft = null;
+      showToast('修正しました');
+      setTab('home');
+    } else {
+      const r = { id: uid(), store: draft.store.trim(), date: draft.date, items: cleanItems, createdAt: Date.now() };
+      await saveReceiptToStorage(r);
+      receipts.unshift(r);
+      receipts.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt||0)-(a.createdAt||0));
+      draft = null;
+      showToast('記録しました');
+      setTab('home');
+    }
+  }
+  else if(action==='delete-receipt'){
+    const id = target.dataset.id;
+    if(!confirm('この記録を削除しますか？')) return;
+    await deleteReceiptFromStorage(id);
+    receipts = receipts.filter(r=>r.id!==id);
+    render();
+  }
+  else if(action==='filter-store'){
+    storeFilter = target.dataset.store;
+    currentTab = 'home';
+    document.querySelectorAll('.tabbar button').forEach(b=> b.classList.toggle('active', b.dataset.tab==='home'));
+    render();
+  }
+  else if(action==='clear-store-filter'){
+    storeFilter = null;
+    render();
+  }
+  else if(action==='add-store-master'){
+    const input = document.getElementById('newStoreName');
+    const val = input.value.trim();
+    if(!val){ showToast('店舗名を入力してください'); return; }
+    if(stores.includes(val)){ showToast('すでに登録されています'); return; }
+    stores.push(val);
+    await saveStores();
+    render();
+  }
+  else if(action==='delete-store-master'){
+    const name = target.dataset.store;
+    if(!confirm(`「${name}」を店舗マスタから削除しますか？(過去の記録は残ります)`)) return;
+    stores = stores.filter(s=>s!==name);
+    await saveStores();
+    render();
+  }
+});
+
+document.getElementById('tabbar').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-tab]');
+  if(btn) setTab(btn.dataset.tab);
+});
+
+// ---------- init ----------
+(async function init(){
+  $view.innerHTML = `<div class="spinner-wrap"><div class="spinner"></div>読み込み中…</div>`;
+  await Promise.all([loadReceipts(), loadStores()]);
+  render();
+})();
+</script>
+</body>
+</html>
