@@ -256,7 +256,7 @@
     padding:9px 6px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
     font-family:'Zen Kaku Gothic New',sans-serif; background:var(--card); color:var(--ink);
   }
-  .item-detail .ibrand{
+  .item-detail .ibrand, .item-detail .icategory{
     width:100%; min-width:0; box-sizing:border-box; padding:9px 8px; font-size:13px; border:1px solid var(--rule); border-radius:3px;
     font-family:'Zen Kaku Gothic New',sans-serif; margin-bottom:8px;
   }
@@ -581,10 +581,11 @@ function renderHome(){
       const total = receiptTotal(r);
       const itemsHtml = (r.items||[]).slice(0,4).map(it=>{
         const up = unitPriceLabel(it);
+        const categoryTag = it.category ? ` <span style="color:var(--ink-faint);">🏷️${escapeHtml(it.category)}</span>` : '';
         const brandTag = it.brand ? ` <span style="color:var(--ink-faint);">/ ${escapeHtml(it.brand)}</span>` : '';
         const saleTag = it.sale ? ` <span class="badge down">セール</span>` : '';
         const upTag = up ? `<div style="font-size:10px;color:var(--ink-faint);text-align:right;">${up}</div>` : '';
-        return `<div class="rcard-item-row"><span>${escapeHtml(it.name)}${brandTag}${saleTag}</span><span class="num">${fmtYen(it.price*(it.qty||1))}</span></div>${upTag}`;
+        return `<div class="rcard-item-row"><span>${escapeHtml(it.name)}${categoryTag}${brandTag}${saleTag}</span><span class="num">${fmtYen(it.price*(it.qty||1))}</span></div>${upTag}`;
       }).join('');
       const more = (r.items||[]).length>4 ? `<div style="text-align:right;color:var(--ink-faint);">他 ${(r.items||[]).length-4} 点</div>` : '';
       html += `<div class="receipt-card" data-id="${r.id}">
@@ -621,6 +622,7 @@ function renderReviewForm(){
   let rows = draft.items.map((it,i)=>{
     const up = unitPriceLabel(it);
     const summary = [];
+    if(it.category) summary.push(`品名:${escapeHtml(it.category)}`);
     if(it.brand) summary.push(escapeHtml(it.brand));
     if(up) summary.push(up);
     if(it.sale) summary.push('セール');
@@ -636,6 +638,8 @@ function renderReviewForm(){
       <div class="item-row-toggle" data-action="toggle-item-detail" data-idx="${i}">${it._open?'▾':'▸'} 詳細（任意）${summaryText}</div>
       ${it._open ? `
       <div class="item-detail">
+        <input type="text" placeholder="品名（比較用・任意。例：ブラックコーヒー）" class="icategory" value="${escapeAttr(it.category||'')}">
+        <div style="font-size:10px;color:var(--ink-faint);margin:-4px 0 8px 2px;">同じ品名を付けた商品同士は、商品タブでまとめて価格比較できます</div>
         <div class="detail-grid">
           <input type="text" inputmode="decimal" placeholder="内容量（例: 500）" class="iamount" value="${it.amount ?? ''}">
           <select class="iunit">
@@ -699,45 +703,65 @@ function bindReviewFormEvents(){
     const amountEl = block.querySelector('.iamount');
     const unitEl = block.querySelector('.iunit');
     const brandEl = block.querySelector('.ibrand');
+    const categoryEl = block.querySelector('.icategory');
     const saleEl = block.querySelector('.isale');
     if(amountEl) amountEl.addEventListener('input', e=> draft.items[idx].amount = e.target.value);
     if(unitEl) unitEl.addEventListener('change', e=> draft.items[idx].unit = e.target.value);
     if(brandEl) brandEl.addEventListener('input', e=> draft.items[idx].brand = e.target.value);
+    if(categoryEl) categoryEl.addEventListener('input', e=> draft.items[idx].category = e.target.value);
     if(saleEl) saleEl.addEventListener('change', e=> draft.items[idx].sale = e.target.checked);
   });
 }
 
 function renderProducts(){
-  const productMap = {}; // name -> [{date, store, price, sale, amount, unit, brand}]
+  const nameMap = {};      // exact product name -> [{date, store, price, sale, amount, unit, brand, name, category}]
+  const categoryMap = {};  // 品名(category) -> same shape, pooled across different product names/brands
   receipts.forEach(r=>{
     (r.items||[]).forEach(it=>{
       const name = (it.name||'').trim();
       if(!name) return;
-      if(!productMap[name]) productMap[name] = [];
-      productMap[name].push({
+      const entry = {
         date: r.date, store: r.store||'不明', price: Number(it.price)||0,
-        sale: !!it.sale, amount: it.amount||null, unit: it.unit||'', brand: it.brand||''
-      });
+        sale: !!it.sale, amount: it.amount||null, unit: it.unit||'',
+        brand: it.brand||'', name, category: (it.category||'').trim()
+      };
+      if(!nameMap[name]) nameMap[name] = [];
+      nameMap[name].push(entry);
+      if(entry.category){
+        if(!categoryMap[entry.category]) categoryMap[entry.category] = [];
+        categoryMap[entry.category].push(entry);
+      }
     });
   });
-  const names = Object.keys(productMap).sort((a,b)=>a.localeCompare(b,'ja'));
+  const categoryNames = Object.keys(categoryMap).sort((a,b)=>a.localeCompare(b,'ja'));
+  const productNames = Object.keys(nameMap).sort((a,b)=>a.localeCompare(b,'ja'));
 
-  let html = `<div class="section-label">商品を選んで価格の推移を見る</div>`;
-  if(names.length===0){
+  let html = `<div class="section-label">商品・品名を選んで価格の推移を見る</div>`;
+  if(productNames.length===0){
     html += `<div class="empty"><span class="ic">📈</span><div class="msg">記録を追加すると、<br>ここに商品ごとの価格グラフが表示されます。</div></div>`;
     $view.innerHTML = html;
     return;
   }
-  if(!selectedProduct || !productMap[selectedProduct]) selectedProduct = names[0];
+
+  const allKeys = [...categoryNames.map(n=>'cat::'+n), ...productNames.map(n=>'name::'+n)];
+  if(!selectedProduct || !allKeys.includes(selectedProduct)) selectedProduct = allKeys[0];
+  const [mode, groupName] = selectedProduct.split('::');
+  const isCategoryMode = mode==='cat';
 
   html += `<div class="field">
     <select id="productSelect">
-      ${names.map(n=>`<option value="${escapeAttr(n)}" ${n===selectedProduct?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+      ${categoryNames.length ? `<optgroup label="🏷️ 品名でまとめて比較">
+        ${categoryNames.map(n=>`<option value="cat::${escapeAttr(n)}" ${selectedProduct==='cat::'+n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+      </optgroup>` : ''}
+      <optgroup label="商品ごとの履歴">
+        ${productNames.map(n=>`<option value="name::${escapeAttr(n)}" ${selectedProduct==='name::'+n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+      </optgroup>
     </select>
   </div>`;
   html += `<div class="receipt-card"><div class="chart-wrap"><canvas id="priceChart"></canvas></div></div>`;
 
-  const history = productMap[selectedProduct].slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const rawHistory = isCategoryMode ? categoryMap[groupName] : nameMap[groupName];
+  const history = (rawHistory||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
   const latestByStore = {};
   history.forEach(h=>{ latestByStore[h.store] = h; }); // last write wins since sorted asc
   const compareList = Object.values(latestByStore)
@@ -755,7 +779,7 @@ function renderProducts(){
       <span>${escapeHtml(h.store)}
         ${isMin?'<span class="badge min">最安</span>':''}
         ${h.sale?'<span class="badge down">セール</span>':''}
-        ${h.brand?`<div style="font-size:10px;color:var(--ink-faint);">${escapeHtml(h.brand)}</div>`:''}
+        ${isCategoryMode?`<div style="font-size:10px;color:var(--ink-faint);">${escapeHtml(h.name)}${h.brand?` / ${escapeHtml(h.brand)}`:''}</div>`:(h.brand?`<div style="font-size:10px;color:var(--ink-faint);">${escapeHtml(h.brand)}</div>`:'')}
         ${up?`<div style="font-size:10px;color:var(--ink-faint);">${up}</div>`:''}
       </span>
       <span class="price">${fmtYen(h.price)}</span>
@@ -798,10 +822,19 @@ function drawChart(history){
       responsive:true,
       maintainAspectRatio:false,
       plugins:{ legend:{display:false},
-        tooltip:{ callbacks:{ label: (c)=> {
-          const h = history[c.dataIndex];
-          return '¥'+c.parsed.y.toLocaleString('ja-JP') + (h && h.sale ? '（セール）' : '');
-        } } } },
+        tooltip:{ callbacks:{
+          title: (items)=> {
+            const h = history[items[0].dataIndex];
+            return h ? h.store : '';
+          },
+          label: (c)=> {
+            const h = history[c.dataIndex];
+            const parts = ['¥'+c.parsed.y.toLocaleString('ja-JP')];
+            if(h && h.name) parts.push(h.brand ? `${h.name}（${h.brand}）` : h.name);
+            if(h && h.sale) parts.push('セール');
+            return parts.join(' ・ ');
+          }
+        } } },
       scales:{
         y:{ ticks:{ callback:(v)=>'¥'+v.toLocaleString('ja-JP'), font:{family:'DotGothic16'} }, grid:{color:'#D9D4C3'} },
         x:{ ticks:{ font:{size:10} }, grid:{display:false} }
@@ -906,7 +939,7 @@ document.getElementById('view').addEventListener('click', async (e)=>{
       date: r.date || new Date().toISOString().slice(0,10),
       items: (r.items||[]).map(it=>({
         name: it.name || '', price: it.price ?? '', qty: it.qty ?? 1,
-        amount: it.amount ?? '', unit: it.unit || '', brand: it.brand || '', sale: !!it.sale, _open:false
+        amount: it.amount ?? '', unit: it.unit || '', brand: it.brand || '', category: it.category || '', sale: !!it.sale, _open:false
       }))
     };
     if(draft.items.length===0) draft.items.push({name:'',price:'',qty:1});
@@ -945,6 +978,7 @@ document.getElementById('view').addEventListener('click', async (e)=>{
         amount: (it.amount!==undefined && it.amount!=='') ? (parseFloat(it.amount)||null) : null,
         unit: it.unit || '',
         brand: (it.brand||'').trim(),
+        category: (it.category||'').trim(),
         sale: !!it.sale
       }))
       .filter(it=>it.name && it.price>0);
