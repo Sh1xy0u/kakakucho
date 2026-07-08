@@ -758,17 +758,27 @@ function renderProducts(){
       </optgroup>
     </select>
   </div>`;
-  html += `<div class="receipt-card"><div class="chart-wrap"><canvas id="priceChart"></canvas></div></div>`;
-
   const rawHistory = isCategoryMode ? categoryMap[groupName] : nameMap[groupName];
   const history = (rawHistory||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
-  const latestByStore = {};
-  history.forEach(h=>{ latestByStore[h.store] = h; }); // last write wins since sorted asc
-  const compareList = Object.values(latestByStore)
+  const usesUnitPrice = history.some(h=> unitPricePer100(h)!==null);
+  if(usesUnitPrice){
+    const sampleUnit = history.find(h=>h.unit)?.unit || '';
+    html += `<div style="font-size:11px;color:var(--ink-soft);margin:-6px 0 8px 2px;">📈 内容量の入力がある記録は、グラフも100${sampleUnit}あたりの単価で表示しています</div>`;
+  }
+  html += `<div class="receipt-card"><div class="chart-wrap"><canvas id="priceChart"></canvas></div></div>`;
+
+  // Keep the latest record per distinct SKU (store + product name + pack size),
+  // NOT just per store — otherwise a 600ml and a 185ml item at the same store
+  // would collapse into a single row and hide one of them from comparison.
+  const latestBySku = {};
+  history.forEach(h=>{
+    const skuKey = [h.store, h.name, h.amount||'', h.unit||''].join('||');
+    latestBySku[skuKey] = h;
+  }); // last write wins since sorted asc
+  const compareList = Object.values(latestBySku)
     .map(h=> ({ ...h, _cmp: unitPricePer100(h) ?? h.price }))
     .sort((a,b)=>a._cmp-b._cmp);
   const minCmp = compareList.length ? compareList[0]._cmp : null;
-  const usesUnitPrice = compareList.some(h=> unitPricePer100(h)!==null);
 
   html += `<div class="section-label">店舗ごとの最新価格${usesUnitPrice ? '（内容量入力ありは単価で比較）' : ''}</div>`;
   html += `<div class="receipt-card">`;
@@ -794,15 +804,15 @@ function renderProducts(){
     renderProducts();
   });
 
-  drawChart(history);
+  drawChart(history, usesUnitPrice);
 }
 
-function drawChart(history){
+function drawChart(history, usesUnitPrice){
   const ctx = document.getElementById('priceChart');
   if(!ctx) return;
   if(productChart){ productChart.destroy(); }
   const labels = history.map(h=>fmtDate(h.date));
-  const data = history.map(h=>h.price);
+  const data = history.map(h=> usesUnitPrice ? (unitPricePer100(h) ?? h.price) : h.price);
   const pointColors = history.map(h=> h.sale ? '#3F7D58' : '#221F1A');
   productChart = new Chart(ctx, {
     type:'line',
@@ -829,7 +839,14 @@ function drawChart(history){
           },
           label: (c)=> {
             const h = history[c.dataIndex];
-            const parts = ['¥'+c.parsed.y.toLocaleString('ja-JP')];
+            const parts = [];
+            const up = h ? unitPricePer100(h) : null;
+            if(usesUnitPrice && up!==null){
+              parts.push(`100${h.unit}あたり ¥${up.toLocaleString('ja-JP',{maximumFractionDigits:1})}`);
+              parts.push(`実売 ¥${Math.round(h.price).toLocaleString('ja-JP')}（${h.amount}${h.unit}）`);
+            } else {
+              parts.push('¥'+Math.round(h.price).toLocaleString('ja-JP'));
+            }
             if(h && h.name) parts.push(h.brand ? `${h.name}（${h.brand}）` : h.name);
             if(h && h.sale) parts.push('セール');
             return parts.join(' ・ ');
